@@ -6,7 +6,7 @@ categories: miscy-shit
 ---
 I just finished my 3rd semester in university, and last semester was very intense because of an Operating Systems course I took. Looking back to it, it was very helpful for me and I had lots of fun doing it, but after looking at my grade I realized it was merely memory beautification. 
 
-One of the difficult parts of doing the assignments was that for some labs (virtual memroy and filesystems) some test cases failed and succeeded differently each time I executed it. I could only speculate that this is the result of memory corruption via race, but where the race occurs was questionable. Race condition bugs were very hard to debug, since they occur about 1 out of 100 trials and they magically disappear under the presence of GDB.
+One of the difficult parts of doing the assignments was that for some labs (virtual memroy and filesystems) some test cases showed different outputs on every execution. I could only speculate that this was the result of memory corruption via race, but where the race occurs was questionable. Race condition bugs were very hard to debug, since they occur about 1 out of 100 trials and they magically disappear under the presence of GDB.
 
 This kind of problem was also present in userspace programs, not only kernels. (although I think it is rather questionable if my version of PintOS can be considered a kernel, hmmm...) After a bit of googling, I found some reasonable recommendations for debugging race conditions.
 
