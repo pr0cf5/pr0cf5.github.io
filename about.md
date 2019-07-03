@@ -4,15 +4,8 @@ title: About
 permalink: /about/
 ---
 
-This is the base what? theme. You can find out more info about customizing your Jekyll theme, as well as basic Jekyll usage documentation at [jekyllrb.com](https://jekyllrb.com/)
+This is the blog of [@pr0cf5], mostly about CTFs and infosec talk. 
 
-You can find the source code for Minima at GitHub:
-[jekyll][jekyll-organization] /
-[minima](https://github.com/jekyll/minima)
+I am an active CTF player in the team KAIST GoN. KAIST GoN is an academic group in KAIST, a Korean university focused on technology and science. My favorite category in CTF is pwn.
 
-You can find the source code for Jekyll at GitHub:
-[jekyll][jekyll-organization] /
-[jekyll](https://github.com/jekyll/jekyll)
-
-
-[jekyll-organization]: https://github.com/jekyll
+I usually post my write-ups in [this](https://github.com/pr0cf5/CTF-writeups) repository.
