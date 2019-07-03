@@ -1,25 +1,28 @@
 ---
 layout: post
-title:  "Welcome to Jekyll!"
-date:   2019-06-13 06:44:29 -0700
-categories: jekyll update
+title:  "Pthread Jitter"
+date:   2019-07-04
+categories: miscy-shit
 ---
-You’ll find this post in your `_posts` directory. Go ahead and edit it and re-build the site to see your changes. You can rebuild the site in many different ways, but the most common way is to run `jekyll serve`, which launches a web server and auto-regenerates your site when a file is updated.
+I just finished my 3rd semester in university, and last semester was very intense because of an Operating Systems course I took. Looking back to it, it was very helpful for me and I had lots of fun doing it, but after looking at my grade I realized it was merely memory beautification. 
 
-To add new posts, simply add a file in the `_posts` directory that follows the convention `YYYY-MM-DD-name-of-post.ext` and includes the necessary front matter. Take a look at the source for this post to get an idea about how it works.
+One of the difficult parts of doing the assignments was that for some labs (virtual memroy and filesystems) some test cases failed and succeeded differently each time I executed it. I could only speculate that this is the result of memory corruption via race, but where the race occurs was questionable. Race condition bugs were very hard to debug, since they occur about 1 out of 100 trials and they magically disappear under the presence of GDB.
 
-Jekyll also offers powerful support for code snippets:
+This kind of problem was also present in userspace programs, not only kernels. (although I think it is rather questionable if my version of PintOS can be considered a kernel, hmmm...) After a bit of googling, I found some reasonable recommendations for debugging race conditions.
 
-{% highlight ruby %}
-def print_hi(name)
-  puts "Hi, #{name}"
-end
-print_hi('Tom')
-#=> prints 'Hi, Tom' to STDOUT.
-{% endhighlight %}
+```
+1. Log intermediary values/variables in critical sections.
+2. Use a timeless or time-travel-time debugger.
+```
 
-Check out the [Jekyll docs][jekyll-docs] for more info on how to get the most out of Jekyll. File all bugs/feature requests at [Jekyll’s GitHub repo][jekyll-gh]. If you have questions, you can ask them on [Jekyll Talk][jekyll-talk].
+An example of a timeless or reverse debugger is [QIRA](https://qira.me/) which logs every changes that each instruction makes throughout execution. Also I found something called [UDB](https://undo.io/solutions/products/live-recorder/undodb-reverse-debugger/), which is an acronym for Undo-DeBugger, which is similar to QIRA but has replay features. However, I found a drawback for these debugging techniques. You cannot change the control flow like GDB can. In GDB, you can change memory/variables/registers using the `set` command. However time-travel or timeless debugging techniques do not allow this. 
 
-[jekyll-docs]: https://jekyllrb.com/docs/home
-[jekyll-gh]:   https://github.com/jekyll/jekyll
-[jekyll-talk]: https://talk.jekyllrb.com/
+Also, in linux, each user-threads are managed and scheduled by the kernel, which means that you cannot change the properties of the scheduler in userspace. One may want to dramatically decrease the scheduling timeslice in order to maximize the possibility of races. However this is not possible with the POSIX thread API.
+
+Therefore, I decided to implement my own user-threads, which is completely managed in userspace. Now, I know there are plenty of reasons that people don't do that. However, this tool is not meant for performance, it is a debugging tool that makes pthreads more 'user-observable' and 'user-controlled'. There are mainly two features I am planning to introduce.
+
+First, I am going to allow users to alter the thread scheduling mechanism. This means that the user can choose scheduling algorithm, time slice, priority and etc. This can be used in ways to make results more stable and consistent. For example, one can dramatically increase the number of context switches so that races occur more often.
+
+Second, I am going to allow a replay feature without the presence of a ptrace sandbox. This can be done by 'replaying' timer interrupts. To emulate timer interrupts I used a UNIX timer, that sends a SIGALRM every time a time interval passes. Therefore every re-scheduling is done on a SIGALRM handler. If we replay the SIGALRM signal patterns precisely the output will be the same. 
+
+I only implemented up to basic context switching, which is even failing with threads more than 2. (lol) However the overall goal is not too difficult to implement, so I think it'll be complete in less than a month.
