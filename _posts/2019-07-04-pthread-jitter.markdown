@@ -15,7 +15,7 @@ This kind of problem was also present in userspace programs, not only kernels. (
 2. Use a timeless or time-travel-time debugger.
 ```
 
-An example of a timeless or reverse debugger is [QIRA](https://qira.me/) which logs every changes that each instruction makes throughout execution. Also I found something called [UDB](https://undo.io/solutions/products/live-recorder/undodb-reverse-debugger/), which is an acronym for Undo-DeBugger, which is similar to QIRA but has replay features. However, I found a drawback for these debugging techniques. You cannot change the control flow like GDB can. In GDB, you can change memory/variables/registers using the `set` command. However time-travel or timeless debugging techniques do not allow this. 
+An example of a timeless or reverse debugger is [QIRA](https://qira.me/) which logs every changes that each instruction makes throughout execution. Also I found something called [UDB](https://undo.io/solutions/products/live-recorder/undodb-reverse-debugger/), an acronym for Undo-DeBugger, which is similar to QIRA but has replay features. However, I found a drawback for these debugging techniques. You cannot change the control flow as in GDB. In GDB, you can change memory/variables/registers using the `set` command. However time-travel or timeless debugging techniques do not allow this. 
 
 Also, in linux, each user-threads are managed and scheduled by the kernel, which means that you cannot change the properties of the scheduler in userspace. One may want to dramatically decrease the scheduling timeslice in order to maximize the possibility of races. However this is not possible with the POSIX thread API.
 

@@ -15,7 +15,7 @@ Also, there are entires directly below `/proc`, which are usually files directly
 
 Now, let's check out what is inside `/proc/<PID>`.
 
-# procfs and pwnables
+## per process entries
 On the terminal, let's execute `ls /proc/self` and it will probably display something like this:
 
 ```
@@ -48,7 +48,9 @@ A very important file. This shows all the memory mappings present in the process
 ### fd
 `fd` is a directory, and under this directory there are each files representing each file descriptor. Therefore unless under very special circumstances there must be the entry 0, 1, and 2 which represents stdin, stdout and stderr respectively. Each of these files are the symbolic links to the original file. For example, if a process opens the file "flag.txt" and the open system call returns the file descriptor 3, then `/proc/self/fd/3` will point to `flag.txt`. If a certain file descriptor is closed the entry for that descriptor will be removed.
 
-# writeup for load
+Now, let's see how these entries can be used to make exploitation easier in CTFs.
+
+## writeup for load
 
 ### Analysis
 This binary takes in a 128 length filename and uses to `open()` and `read()` function to read contents from it. The length and offset can be controlled freely by the user, which causes a buffer overflow. To control the overflowed buffer content we read from `/dev/stdin`. (`/dev/stdin` is a symlink to `/proc/self/fd/0`) We can enter 0 for the offset and an sufficient length so the ROP chain will fit in. However, right before the binary terminates, the binary closes stdin, stdout and sterr using the `close()` system call. Therefore information disclosure or further input is impossible.
