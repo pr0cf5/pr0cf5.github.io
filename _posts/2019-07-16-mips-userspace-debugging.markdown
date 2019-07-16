@@ -6,10 +6,10 @@ categories: ctf
 ---
 This week, I decided to solve a challenge on [pwnable.kr](pwnable.kr) called **mipstake**. It is a simple mips userspace pwnable, but since I did not have any MIPS device I went through some painful processes during the debugging environment setup. In this post, I will be introducing the usage of `qemu-system-mips` to emulate MIPS userspace binaries and debug them using GDBserver.
 
-## STEP.1 Install qemu-system-mips
+#### STEP.1 Install qemu-system-mips
 This part is easy. Just execute `apt-get install qemu qemu-system`
 
-## STEP.2 Download the Debian image for MIPS and install the OS
+#### STEP.2 Download the Debian image for MIPS and install the OS
 This process can be done with the following script.
 ```bash
 #!/bin/sh
@@ -21,7 +21,7 @@ qemu-system-mips -M malta \ -m 256 -hda hda.img \ -kernel vmlinux-4.19.0-5-4kc-m
 
 The last line will pop up a curses based install, where you can just set options as you wish.
 
-## STEP.3 Extract initrd
+#### STEP.3 Extract initrd
 This can be done with the following script.
 ```bash
 #!/bin/sh
@@ -34,7 +34,7 @@ sudo umount /mnt
 sudo qemu-nbd -d /dev/nbd0
 ```
 
-## STEP.4 Boot the VM
+#### STEP.4 Boot the VM
 ```bash
 #!/bin/sh
 qemu-system-mips -M malta \
@@ -54,19 +54,19 @@ The redirection *5555:1234* is for GDBserver, as GDBserver's default port is 123
 
 The last redirection *5556:9033* is required to send packets to the userspace binary we will be exploiting. 
 
-## STEP.5 Install gdbserver on the vm
+#### STEP.5 Install gdbserver on the vm
 
 Easy: `apt-get install gdbserver gdb`
 
-## STEP.6 Install GDB-multiarch on the host
+#### STEP.6 Install GDB-multiarch on the host
 
 Easy again: `apt-get install gdb-multiarch`
 
-## STEP.7 Execute the user program under gdbserver
+#### STEP.7 Execute the user program under gdbserver
 
 `gdbserver localhost:1234 <userprog_name>`
 
-## Step.8 Connect to the gdbserver and get debugging
+#### Step.8 Connect to the gdbserver and get debugging
 
 First, execute `gdb-multiarch`. Then execute the following commands. Afterwards, you can add breakpoints, view memory, set follow-fork-mode or whatever. It is convenient to save the necessary commands as a script and use the `source` command in GDB to execute them all at once.
 
