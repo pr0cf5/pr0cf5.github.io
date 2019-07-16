@@ -19,7 +19,7 @@ An example of a timeless or reverse debugger is [QIRA](https://qira.me/) which l
 
 Also, in linux, each user-threads are managed and scheduled by the kernel, which means that you cannot change the properties of the scheduler in userspace. One may want to dramatically decrease the scheduling timeslice in order to maximize the possibility of races. However this is not possible with the POSIX thread API.
 
-Therefore, I decided to implement my own user-threads, which is completely managed in userspace. Now, I know there are plenty of reasons why people don't do that. However, this tool is not meant for performance, it is a debugging tool that makes pthreads more 'user-observable' and 'user-controlled'. There are mainly two features I am planning to introduce.
+Therefore, I decided to implement my own user-threads, which is completely managed in userspace. Now, I know there are plenty of reasons why people don't do that. However, this tool is not meant for performance, it is a debugging tool that makes pthreads more 'user-observable' and 'user-controlled'. There are mainly two features I am planning to implement.
 
 First, I am going to allow users to alter the thread scheduling mechanism. This means that the user can choose scheduling algorithm, time slice, priority and etc. This can be used in ways to make results more stable and consistent. For example, one can dramatically increase the number of context switches so that races occur more often.
 
