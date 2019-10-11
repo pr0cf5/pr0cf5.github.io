@@ -1,6 +1,6 @@
 ---
 layout: post
-title:  "Balsn CTF 2019: KrazyNote
+title:  Balsn CTF 2019: KrazyNote
 date:   2019-10-10
 categories: ctf
 ---
@@ -101,7 +101,7 @@ A page is a unit of virtual memory, which is normally 0x1000 bytes. A frame is a
 
 To prevent the page table from being too huge, people thought of something called multi-level paging. The basic idea is similar to a tree-based-search. Each page table entry points to a lower-level page table instead of pointing to the page table itself. You can check [this](https://0xax.gitbooks.io/linux-insides/content/Theory/linux-theory-1.html) out to fully understand multilevel paging.
 
-An important concept here is that each page table entry also contains the page permissions such as READ/WRITE/EXECUTE. 
+An important concept here is that each page table entry also contains the page permissions such as READ/WRITE/EXECUTE. Therefore altering page table entires will cause the page table permissions to change.
 
 #### Analysis
 We are given four files, `initramfs.cpio.gz`, 'bzImage', 'run.sh' and 'note.ko'. Let's first look at `run.sh`, it is the bash script that turns on the qemu vm.
