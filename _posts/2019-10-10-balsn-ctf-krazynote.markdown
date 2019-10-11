@@ -1,6 +1,6 @@
 ---
 layout: post
-title: Balsn CTF 2019: KrazyNote
+title: Balsn CTF 2019 - KrazyNote
 date: 2019-10-10
 categories: ctf
 ---
