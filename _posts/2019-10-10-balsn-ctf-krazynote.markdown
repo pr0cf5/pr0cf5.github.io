@@ -10,9 +10,9 @@ It was my first time doing a non-userspace pwn challenge in a CTF, so I did a lo
 
 My goal is to try to describe the solving process as detailed as possible, so that people who don't have experience in kernel exploitation can understand it as well. I will also add links to resources I've used to solve it.
 
-### Some Background Information
+## Some Background Information
 
-#### task_struct and cred_struct
+### task_struct and cred_struct
 
 The essence of kernel pwning is not so different from userspace pwning. With flaws in the program, we get arbitrary memory read/write or control flow hijack and do what we want. However, the final goal of kernel exploitation is different from that of userspace exploitation.
 
@@ -75,7 +75,7 @@ So if we have arbitrary memory read/write and we can locate a cred structure for
 
 Another way is to execute the code `commit_cred(prepare_kernel_creds(0))`. Basically this will automatically locate the task_struct of the current thread and change its cred_struct to a new one with uid 0.
 
-#### kernel memory protections
+### kernel memory protections
 
 On modern operating system, kernelspace and userspace is strictly separated. Obviously, userspace programs should not have access to kernel memory. The opposite is a bit ambiguous. There are definitely instances where kernel code must access data in userland, such as in a system call, where the system call must read or write to userland addresses.
 
@@ -87,7 +87,7 @@ To bypass this, hackers thought of kernel ROP, where the function pointer is ove
 
 One question should emerge: in system calls sometimes kernel code must fetch data from userspace. Under SMAP, how should this be done? It is done with a special API called `copy_from_user` and `copy_to_user`. It works very similarly to `memcpy` except it overrides SMEP/SMAP and has many underlying, complex memory mechanisms.
 
-#### paging and virtual memory
+### paging and virtual memory
 
 In modern systems an ingenious abstraction called virtual memory is applied. The core concepts are long enough to explain in a book, I'll only be explaining the basics.
 
@@ -103,7 +103,7 @@ To prevent the page table from being too huge, people thought of something calle
 
 An important concept here is that each page table entry also contains the page permissions such as READ/WRITE/EXECUTE. Therefore altering page table entires will cause the page table permissions to change.
 
-### Analysis
+## Analysis
 We are given four files, `initramfs.cpio.gz`, 'bzImage', 'run.sh' and 'note.ko'. Let's first look at `run.sh`, it is the bash script that turns on the qemu vm.
 
 ```bash
