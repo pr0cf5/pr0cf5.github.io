@@ -161,3 +161,68 @@ poweroff -f
 It mounts procfs, devfs, disables dmesg and kptr and `insmod`'s note.ko. Insmod means install-module, which is installing a LKM (Linux-Kernel-Mdoule). A Linux-Kernel-Module is a piece of code that can be added to kernelspace, and there are many purposes for this. It can be used to implemenet a character device driver(ptmx, urandom, null), a virtual filesystem, or a network driver. In this case, note.ko is a kernel module used to implement a character device driver. (which cannot be directly realized just by looking at the rcS file but most CTF challenges test us to pwn character device drivers because they are simple to implement and understand) LKMs are also widely used for implementing rootkits and kernel backdoors, so it is an important concept in linux information security. 
 
 Afterwards it spawns a shell with uidgid 1000, so we can't read the flag with this shell. We need to gain root by pwning the LKM, and probably we need to change our creds to uid0 or get ring0 ACE (Arbitrary-Code-Execution) and do `commit_cred(prepare_kernel_creds(0))`. (note.ko) 
+
+Just like we do in any other pwn challenge, we analyze the provided file for vulnerabilites. First we look at the `module_init` function in note.ko. As implied in its name, this function should be called when the module is initialized. The logic is very simple.
+
+```c
+void init_module()
+{
+  bufPtr = bufStart;
+  return misc_register(&dev);
+}
+```
+
+It initializes a global `char *` pointer to the address of a `char[]` buffer, and calls `misc_register` with a global structure, `dev`. `misc_register` is an external call, it is probably within the code of the linux kernel. We check its API documentation to figure out what it does, as well as what `dev` is. With a brief google search, we get [this](https://www.kernel.org/doc/htmldocs/kernel-api/API-misc-register.html) page, which tells us that `dev` is a `struct miscdevice` structure. In memory, `dev` looks something like this:
+
+
+```c
+struct ??? {
+	int a; /* initialized to 0 */
+	char *b; /* a pointer to "note".
+	void *c; /* a pointer to something that looks like a function table */
+
+};
+```
+
+More google search and we get this:
+
+```c
+struct miscdevice  {
+	int minor;
+	const char *name;
+	const struct file_operations *fops;
+	struct list_head list;
+	struct device *parent;
+	struct device *this_device;
+	const struct attribute_group **groups;
+	const char *nodename;
+	umode_t mode;
+};
+```
+
+So a is `minor`, b is `name`, and c is `fops`, which looks like this:
+
+```c
+struct file_operations {
+	struct module *owner;
+	loff_t (*llseek) (struct file *, loff_t, int);
+	ssize_t (*read) (struct file *, char __user *, size_t, loff_t *);
+	ssize_t (*write) (struct file *, const char __user *, size_t, loff_t *);
+	ssize_t (*read_iter) (struct kiocb *, struct iov_iter *);
+	ssize_t (*write_iter) (struct kiocb *, struct iov_iter *);
+	int (*iopoll)(struct kiocb *kiocb, bool spin);
+	int (*iterate) (struct file *, struct dir_context *);
+	int (*iterate_shared) (struct file *, struct dir_context *);
+	__poll_t (*poll) (struct file *, struct poll_table_struct *);
+	long (*unlocked_ioctl) (struct file *, unsigned int, unsigned long);
+	long (*compat_ioctl) (struct file *, unsigned int, unsigned long);
+	
+	... truncated
+};
+```
+One thing about linux kernel module analysis is that there are so many huge structures which are sometimes nested. Google search is always good for these recursive structures. 
+From the `file_operations` structure above, we can check that only `open` and `unlocked_ioctl` is defined for the module, and all else is set to NULL. 
+
+But what's the difference between `unlocked_ioctl` and `compat_ioctl`? You can check [here](https://unix.stackexchange.com/questions/4711/what-is-the-difference-between-ioctl-unlocked-ioctl-and-compat-ioctl) for a better explanantion. Basically, `unlocked_ioctl` does not use a global synchronization lock provided by the linux kernel, and all synchorinzation primitives must be implemented by the module author. This is a very important hint: there may be race conditions in the LKM.
+
+
