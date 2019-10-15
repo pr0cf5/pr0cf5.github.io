@@ -178,7 +178,7 @@ It initializes a global `char *` pointer to the address of a `char[]` buffer, an
 ```c
 struct ??? {
 	int a; /* initialized to 0 */
-	char *b; /* a pointer to "note".
+	char *b; /* a pointer to "note". */
 	void *c; /* a pointer to something that looks like a function table */
 
 };
