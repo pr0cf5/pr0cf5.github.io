@@ -103,6 +103,30 @@ To prevent the page table from being too huge, people thought of something calle
 
 An important concept here is that each page table entry also contains the page permissions such as READ/WRITE/EXECUTE. Therefore altering page table entires will cause the page table permissions to change.
 
+### Demand on paging and lazy loading
+
+I mentioned that in the kernel some memory is located at disk (swap partition) while oftenly used memory is located at RAM. Actually this is not entirely true, some memory may neither be in those two places. One example is memory mapped pages, which are created via the `mmap` system call. The underlying concepts are complicated, but simply speaking, `mmap`'ed pages aren't actually 'created' before they are accessed via read/write. By 'created' it means that actual physical pages are not mapped for the `mmap`'ed page. This is a wise move because the contents of an `mmap`'ed page can be recovered easily even if the page itself isn't stored somewhere. 
+
+Let's take an example where a user executes a system call like the following.
+
+```
+mmap(0xdead000, 0x1000, PROT_READ|PROT_WRITE, MAP_FIXED|MAP_PRIVATE, fd, 0);
+```
+
+In this case, the kernel does not copy the entire contents from the file corresponding to `fd` to 0xdead000; it only saves the information that address 0xdead000 is mapped to file `fd`. When we do something like this:
+
+```
+char *a = (char *)0xdead000
+printf("content: %c\n", a[0]);
+```
+
+A dereference to that page is made. If this happens, the kernel uses the saved information (0xdead000 is mapped to fd) to 1. create a physical frame for 0xdead000, 2. read the contents of file fd to 0xdead000, 3. mark appropriate entires in the page table so virtual address 0xdead000 is recognizable.
+
+In the case of anonymous mappings (such as the heap) it is even more simple. You can change step 2 to 'zero out the contents of the physical frame' instead of reading from a file.
+
+The main point i'm trying to say here is this: **it takes a loooong time to access (r/w) a mmap'ed page for the first time. such long jobs may cause a context switch and sleep the current thread**. This idea will be very important for understanding the exploit.
+
+
 ## Analysis
 We are given four files, `initramfs.cpio.gz`, 'bzImage', 'run.sh' and 'note.ko'. Let's first look at `run.sh`, it is the bash script that turns on the qemu vm.
 
@@ -180,7 +204,6 @@ struct ??? {
 	int a; /* initialized to 0 */
 	char *b; /* a pointer to "note". */
 	void *c; /* a pointer to something that looks like a function table */
-
 };
 ```
 
