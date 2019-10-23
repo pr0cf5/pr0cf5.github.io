@@ -369,13 +369,13 @@ if (operation == -255)
 
 It's pretty much what we can expect. But what we should really see is the `copy_from_user` usage. It can be used to increase the success of our race, because as I said, `copy_from_user` is an heavy operation. Let's imagine a situation like the following.
 
-|               thread 1               |          thread 2         |
-|:------------------------------------:|:-------------------------:|
-|        edit note 0 (size 0xf0)       |            idle           |
-|            copy_from_user            |            idle           |
-|                 idle                 |      delete all notes     |
-|                 idle                 | add note 0 with size 0x20 |
-|                 idle                 | add note 1 with size 0x20 |
-| change content of note 0 (size 0xf0) |            idle           |
+|               thread 1              |          thread 2         |
+|:-----------------------------------:|:-------------------------:|
+|       edit note 0 (size 0xf0)       |            idle           |
+|            copy_from_user           |            idle           |
+|                 idle                |      delete all notes     |
+|                 idle                | add note 0 with size 0x20 |
+|                 idle                | add note 1 with size 0x20 |
+| continue edit of note 0 (size 0xf0) |            idle           |
 
 The last operation, change content of note 0 will overflow note 1, because the edit length is 0xf0. With this, we can forge an arbitrary note structure.
