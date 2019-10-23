@@ -12,7 +12,7 @@ My goal is to try to describe the solving process as detailed as possible, so th
 
 ## Some Background Information
 
-### task_struct and cred_struct
+### 1. task_struct and cred_struct
 
 The essence of kernel pwning is not so different from userspace pwning. With flaws in the program, we get arbitrary memory read/write or control flow hijack and do what we want. However, the final goal of kernel exploitation is different from that of userspace exploitation.
 
@@ -75,7 +75,7 @@ So if we have arbitrary memory read/write and we can locate a cred structure for
 
 Another way is to execute the code `commit_cred(prepare_kernel_creds(0))`. Basically this will automatically locate the task_struct of the current thread and change its cred_struct to a new one with uid 0.
 
-### kernel memory protections
+### 2. kernel memory protections
 
 On modern operating system, kernelspace and userspace is strictly separated. Obviously, userspace programs should not have access to kernel memory. The opposite is a bit ambiguous. There are definitely instances where kernel code must access data in userland, such as in a system call, where the system call must read or write to userland addresses.
 
@@ -87,7 +87,7 @@ To bypass this, hackers thought of kernel ROP, where the function pointer is ove
 
 One question should emerge: in system calls sometimes kernel code must fetch data from userspace. Under SMAP, how should this be done? It is done with a special API called `copy_from_user` and `copy_to_user`. It works very similarly to `memcpy` except it overrides SMEP/SMAP and has many underlying, complex memory mechanisms.
 
-### paging and virtual memory
+### 3. paging and virtual memory
 
 In modern systems an ingenious abstraction called virtual memory is applied. The core concepts are long enough to explain in a book, I'll only be explaining the basics.
 
@@ -103,7 +103,7 @@ To prevent the page table from being too huge, people thought of something calle
 
 An important concept here is that each page table entry also contains the page permissions such as READ/WRITE/EXECUTE. Therefore altering page table entires will cause the page table permissions to change.
 
-### Demand on paging and lazy loading
+### 4. Demand on paging and lazy loading
 
 I mentioned that in the kernel some memory is located at disk (swap partition) while oftenly used memory is located at RAM. Actually this is not entirely true, some memory may neither be in those two places. One example is memory mapped pages, which are created via the `mmap` system call. The underlying concepts are complicated, but simply speaking, `mmap`'ed pages aren't actually 'created' before they are accessed via read/write. By 'created' it means that actual physical pages are not mapped for the `mmap`'ed page. This is a wise move because the contents of an `mmap`'ed page can be recovered easily even if the page itself isn't stored somewhere. 
 
@@ -126,6 +126,9 @@ In the case of anonymous mappings (such as the heap) it is even more simple. You
 
 The main point i'm trying to say here is this: **it takes a loooong time to access (r/w) a mmap'ed page for the first time. such long jobs may cause a context switch and sleep the current thread**. This idea will be very important for understanding the exploit.
 
+### 5. Alias pages
+
+All instructions in x86_64 use virtual addresses. There is no ABI to access physical frames directly. But there are definitely instances where the kernel must change a value in a physical frame. One example is walking the multilevel page table and changing a page table entry. To allow kernels to access physical frames, there is a concept called alias pages, meaning that all physical frames have a corresponding virtual page. This mapping is enscribed to the page table at boot and exists in the page table of every process. So most physical frames have two virtual pages mapped to it, that is where the term 'alias' came from. Usually the address of an alias page is `SOME_OFFSET + physical address`.
 
 ## Analysis
 We are given four files, `initramfs.cpio.gz`, 'bzImage', 'run.sh' and 'note.ko'. Let's first look at `run.sh`, it is the bash script that turns on the qemu vm.
@@ -249,3 +252,130 @@ From the `file_operations` structure above, we can check that only `open` and `u
 But what's the difference between `unlocked_ioctl` and `compat_ioctl`? You can check [here](https://unix.stackexchange.com/questions/4711/what-is-the-difference-between-ioctl-unlocked-ioctl-and-compat-ioctl) for a better explanantion. Basically, `unlocked_ioctl` does not use a global synchronization lock provided by the linux kernel, and all synchorinzation primitives must be implemented by the module author. This is a very important hint: there may be race conditions in the LKM.
 
 
+As the name suggests, the kernel module does things related to notes, which were all in the `unlocked_ioctl` handler. Therefore, it had the 4 features in any note CTF challenge: make, edit, view, delete. Let's look at them each.
+
+```c
+void * unlocked_ioctl(file *f, int operation, void *userPtr)
+{
+  char encBuffer[0x20];
+  struct noteRequest req;
+
+  memset(encBuffer, 0, sizeof(encBuffer));
+  if ( copy_from_user(&req, userPtr, sizeof(req)) )
+    return -14;
+  /* make note, view note, edit note, delete note */
+  return result;
+}
+```
+
+The type of note operation is determined by the argument operation (for example, when `operation == -255` it does `edit note`) and other additional information (note length, note content) is given via the req structure in userspace, which is pointed by userPtr as the third argument.
+
+Let's take a look at how a new note is made.
+```c
+	if ( operation == -256 )
+	{
+		idx = 0;
+		while ( 1 )
+		{
+		  if (!notes[idx])
+			break;
+		if (++idx == 16)
+			return -14LL;
+		}
+
+	new = (note *)bufPtr;
+	req.noteIndex = idx;
+	notes[idx] = (struct note *)bufPtr;
+	new->length = req.noteLength;
+	new->key = *(void **)(*(void **)(__readgsqword((unsigned __int64)&current_task) + 0x7E8) + 80);// ????
+	bufPtr = &new->content[req.length];
+
+	if ( req.length > 0x100uLL )
+	{
+	  _warn_printk("Buffer overflow detected (%d < %lu)!\n", 256LL, req.length);
+	  BUG();
+	}
+
+	_check_object_size(encBuffer, req.length, 0LL);
+	copy_from_user(encBuffer, userptr, req.length);
+	length = req.length;
+
+	if ( req.length )
+	{
+	  i = 0LL;
+	  do
+	  {
+	    encBuffer[i / 8] ^= new->key;         // encryption
+	    i += 8LL;
+	  }
+	  while ( i < length );
+	}
+
+	memcpy(new->content, encBuffer, length);
+	new->contentPtr = &new->content[-page_offset_base];
+	return 0;
+```
+
+The logic is simple. First it allocates space from bufPtr to make a new note. Then it fetches the key from a nested structure in `current_task` which is the `task_struct` which we've discussed previously. We're not sure what it is for now, but by debugging I checked that it's a pointer to a kernel heap address. (How I attached a debugger to it will be explained later) Then it XOR encrypts its content with the key and copies it to the note's inline buffer. Finally, it stores the value &note->content - page_offset_base. I have never seen any pattern like this (storing a pointer subtracted to another pointer which is irrelevant). I just speculated that it's a compiler autogenerated feature or kernel pointer protection mechanism of any sort.
+
+There are a few unresolved questions. First, what's the `key` value? It's hard to figure that out because it's hard to find what's at offset 0x7e8 in the `task_struct`. Linux kernel structures are often heavily nested, and it's nearly impossible to do `offsetof` just by looking at the source with your head. So at first I just gave up, thinking it's unimportant. Second, what is `page_offset_base`? After a bit of experiments and research, I came to this conclusion. Remember alias pages? I said that the address of an alias page is `SOME_OFFSET + physical address`. `page_offset_base` is the `SOME_OFFSET`. In nokaslr environment, `page_offset_base` is a fixed value, and in a kaslr environment `page_offset_base` is a randomzied value.
+
+Let's take a look at delete.
+```c
+ptr = notes;
+if (operation == -253)
+{
+do                  
+{
+  *ptr = 0LL;
+  ++ptr;
+}
+while (ptr < note_end);
+
+bufPtr = bufStart;
+memset(bufStart, 0, sizeof(bufStart)); 	
+return 0;
+```
+
+It's simple. First we zero out the notes array, set bufPtr to the start of the global buffer, and zero out the global buffer to prevent infoleaks.
+
+Let's look at edit.
+```c
+if (operation == -255)
+{
+	note = notes[idx];
+	if ( note )
+	{
+	length = note->length;
+	userptr = req.userptr;
+	contentPtr = (note->contentPtr + page_offset_base);
+	_check_object_size(encBuffer, length, 0LL);
+	copy_from_user(encBuffer, userptr, length);
+	if ( length )
+		{
+			i = 0;
+			do
+			{
+			  encBuffer[i/8] ^= note->key;
+			  i += 8LL;
+			}
+			while (length > i);                    
+			memcpy(contentPtr, encBuffer, length)
+		}
+	return 0LL;
+	}
+}
+```
+
+It's pretty much what we can expect. But what we should really see is the `copy_from_user` usage. It can be used to increase the success of our race, because as I said, `copy_from_user` is an heavy operation. Let's imagine a situation like the following.
+
+|               thread 1               |          thread 2         |
+|:------------------------------------:|:-------------------------:|
+|        edit note 0 (size 0xf0)       |            idle           |
+|            copy_from_user            |            idle           |
+|                 idle                 |      delete all notes     |
+|                 idle                 | add note 0 with size 0x20 |
+|                 idle                 | add note 1 with size 0x20 |
+| change content of note 0 (size 0xf0) |            idle           |
+
+The last operation, change content of note 0 will overflow note 1, because the edit length is 0xf0. With this, we can forge an arbitrary note structure.
