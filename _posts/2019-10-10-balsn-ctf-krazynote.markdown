@@ -379,3 +379,51 @@ It's pretty much what we can expect. But what we should really see is the `copy_
 | continue edit of note 0 (size 0xf0) |            idle           |
 
 The last operation, change content of note 0 will overflow note 1, because the edit length is 0xf0. With this, we can forge an arbitrary note structure.
+
+A note structure looks like the follwing:
+```c
+struct note {
+	unsigned long key;
+	unsigned char length;
+	void *contentPtr;
+	char content[];
+}
+```
+
+## Exploitation
+
+If we can forge an arbitrary note, it is obvious that we have arbitrary memory read/write. But before that we must leak a kernel pointer, since kaslr is enabled. As I mentioned before, the value `key` is a kernel pointer. If we leak a key value, we get a kernel pointer. 
+
+So first, we attempt to leak the key value. This can be done easily.
+
+|  0x0 | note 0, with abnormal size 0xf0 |
+|:----:|:-------------------------------:|
+| 0x20 |              note 1             |
+| 0x40 |         NULL'ed out data        |
+
+If we try to view note 0, it will decrpyt the NULL'ed out data as well, and XORing with 0 yields the original value, so we can leak the key.
+
+Now that we know the key, we can get the exact value of the `contentPtr`. However, `contentPtr` is actually not a real pointer; to make it a real pointer we must add the value `page_base_offset` which is unknown due to kaslr. However we can do arbitrary read/writes relative to the `.bss` of the module. Therefore, we can leak the module base by reading a pointer to a note structure from the `notes` array.
+
+With some math, it becomes possible to get the exact value of `page_base_offset`. Now we know a lot of addresses, but how about the kernel image base? The kernel image base does not have a static offset with the module. We can find the kernel image base by analyzing recursive calls to external functions such as `copy_from_user` of `copy_to_user`.
+
+## Debugging
+
+If we get leaks, we need to check that the data we leaked is what we think it is. For effective debugging, there are 2 recommendations.
+
+```
+1. set uid to 0 so that we have access to /proc/kallsyms and /proc/modules
+2. disable kaslr
+```
+
+1 can be done by changing the init script in the initramfs. Change the init script line that looks something like this `setsid cttyhack setuidgid 1000 sh` to `setsid cttyhack setuidgid 0 sh`. Now on boot, you will get a root shell, not a uid1000 shell.
+
+2 can be done by editing `run.sh`. Change `-append 'console=ttyS0 loglevel=3 oops=panic panic=1 kaslr'` to `-append 'console=ttyS0 loglevel=3 oops=panic panic=1 nokaslr'`. 
+
+Now on boot, with kaslr disabled you will get a root shell. Now you can read the two files `/proc/kallsyms` and `/proc/modules`. `/proc/kallsyms` is shows the addresses for all the symbols in the kernel. `/proc/modules` show how kernel modules are mapped to kernel virutal memory. By looking at `/proc/modules` we can verify if the module base we calculated is equal to the actual base address in `/proc/moduels`. (The below is an example)
+
+```
+note 24576 0 - Live 0xffffffffc0000000 (OE)
+```
+
+For dynamic debugging, we can attach a remote debugger via qemu gdbstub. We can do this by providing a `-s` argument to the `run.sh` script, open gdb in another terminal and execute `target remote localhost:1234`. One thing to be cautious is to not trust `vmmap`, because mappings are not accurate as in userspace programs.
