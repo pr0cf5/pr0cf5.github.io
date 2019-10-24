@@ -380,6 +380,9 @@ It's pretty much what we can expect. But what we should really see is the `copy_
 
 The last operation, change content of note 0 will overflow note 1, because the edit length is 0xf0. With this, we can forge an arbitrary note structure.
 
+
+## Exploitation Plans
+
 A note structure looks like the follwing:
 ```c
 struct note {
@@ -389,8 +392,6 @@ struct note {
 	char content[];
 }
 ```
-
-## Exploitation
 
 If we can forge an arbitrary note, it is obvious that we have arbitrary memory read/write. But before that we must leak a kernel pointer, since kaslr is enabled. As I mentioned before, the value `key` is a kernel pointer. If we leak a key value, we get a kernel pointer. 
 
@@ -406,6 +407,21 @@ If we try to view note 0, it will decrpyt the NULL'ed out data as well, and XORi
 Now that we know the key, we can get the exact value of the `contentPtr`. However, `contentPtr` is actually not a real pointer; to make it a real pointer we must add the value `page_base_offset` which is unknown due to kaslr. However we can do arbitrary read/writes relative to the `.bss` of the module. Therefore, we can leak the module base by reading a pointer to a note structure from the `notes` array.
 
 With some math, it becomes possible to get the exact value of `page_base_offset`. Now we know a lot of addresses, but how about the kernel image base? The kernel image base does not have a static offset with the module. We can find the kernel image base by analyzing recursive calls to external functions such as `copy_from_user` of `copy_to_user`.
+
+Let's take a look at how kernel extern calls are made.
+`6C                 call    _copy_from_user`
+
+Analyzing where it jumps to points to a literally pointless location in the .extern segment. I thought that this code may be altered at runtime, and checked it in the debugger. It showed a relative jump to `copy_from_user`. By analyzing the code at offset 0x6c and if we know the module base, we can find out the address of `copy_from_user`, and therefore the kernel base.
+
+So we did something like this:
+```c
+unsigned long leak = read64(0x6c + moduleBase);
+long int offset = *((int *)(((char *)&leak) + 1)) + 5;
+copy_from_user = offset + moduleBase + 0x6c;
+```
+
+First we read the code at offset 0x6c. Then, we isolate the 32bit imm from the jump instruction and add it to the current pc so that we can get the exact address of `copy_from_user`.
+
 
 ## Debugging
 
@@ -426,4 +442,84 @@ Now on boot, with kaslr disabled you will get a root shell. Now you can read the
 note 24576 0 - Live 0xffffffffc0000000 (OE)
 ```
 
-For dynamic debugging, we can attach a remote debugger via qemu gdbstub. We can do this by providing a `-s` argument to the `run.sh` script, open gdb in another terminal and execute `target remote localhost:1234`. One thing to be cautious is to not trust `vmmap`, because mappings are not accurate as in userspace programs.
+We can also verify the address of `copy_from_user` by doing `cat /proc/kallsyms | grep copy_from_user`.
+```
+/home/note # cat /proc/kallsyms | grep copy_from_user
+ffffffff8874d890 T iov_iter_copy_from_user_atomic
+ffffffff887518a0 t kfifo_copy_from_user.isra.2
+ffffffff88753e80 T _copy_from_user
+ffffffff88a060d0 T csum_partial_copy_from_user
+ffffffff88a086b0 T copy_from_user_nmi
+ffffffff892c71a8 r __ksymtab__copy_from_user
+ffffffff892c8148 r __ksymtab_csum_partial_copy_from_user
+ffffffff892c9a28 r __ksymtab_iov_iter_copy_from_user_atomic
+ffffffff892ce238 r __ksymtab_copy_from_user_nmi
+ffffffff892e2a92 r __kstrtab_iov_iter_copy_from_user_atomic
+ffffffff892e314c r __kstrtab__copy_from_user
+ffffffff892f71b8 r __kstrtab_csum_partial_copy_from_user
+ffffffff892f741c r __kstrtab_copy_from_user_nmi
+```
+
+For dynamic debugging, we can attach a remote debugger via qemu gdbstub. We can do this by providing a `-s` argument to the `run.sh` script, open gdb in another terminal and execute `target remote localhost:1234`. One thing to be cautious is to not trust `vmmap`, because mappings are not accurate as in userspace programs. Since from some reason, setting breakpoints by symbols does not work, we disable KASLR, find symbols using kallsyms, and set breakpoints with the raw addresses. A good practice is to put all the gdb commands in a script and execute them all at once using the gdb `source` command.
+
+## Actual Exploit
+
+Now we have the module base, kernel image base and page_base_offset. We have very stable arbitrary read and write. If this was a userspace pwnable, it would be very easy to finish it off. However, I was a noob in kernel sploits and didn't know what to do. I tried to locate the task structure or cred structure, but failed. Here are some attempts I wasted lots of time on.
+```
+1. create a lot of threads, scan the kernel memory starting from page_offset_base and try to find 3 consecutive 1000s. This idea comes from the fact that the cred structure has 3 consecutive members that are 1000. (uid, gid, euid)
+2. iterate the list of threads, starting from init_thread which is located at the kernel image .data. Since we have arbitrary read, it is possible to iterate the list.
+```
+
+Both attempts did not work. I don't know why the first one did not work, theoretically it should work. Maybe it's because the scan domain was way too big? The 2nd method did not work for one reason: we don't know how the `task_struct` looks like. For sure, we can check its struct in the source code and header files, but it's hard to find the exact offsets because of nested structures. Therefore, after a lot of thinking I decided to do something like the following:
+
+```
+1. compile a kernel module like the following.
+2. disassemble the kernel module to find out the offsets I want.
+```
+
+Here is an example. [This](https://blog.sourcerer.io/writing-a-simple-linux-kernel-module-d9dc3762c234) is my reference.
+
+```c
+#include <linux/module.h>     /* Needed by all modules */ 
+#include <linux/kernel.h>     /* Needed for KERN_INFO */ 
+#include <linux/init.h>       /* Needed for the macros */
+#include <linux/sched.h> 
+#include <stddef.h>
+  
+///< The license type -- this affects runtime behavior 
+MODULE_LICENSE("GPL"); 
+  ///< The description -- see modinfo 
+MODULE_DESCRIPTION("A simple Hello world LKM!"); 
+  
+///< The version of the module 
+MODULE_VERSION("0.1"); 
+  
+static int __init hello_start(void) 
+{ 
+    printk(KERN_INFO "Loading hello module...\n"); 
+    printk(KERN_INFO "Hello world\n"); 
+    return 0; 
+} 
+  
+static void __exit hello_end(void) 
+{ 
+    printk(KERN_INFO "offset: %p\n", offsetof(struct mm_struct, pgd));
+    printk(KERN_INFO "Goodbye Mr.\n"); 
+    printk(KERN_INFO "haha\n");
+} 
+  
+module_init(hello_start); 
+module_exit(hello_end); 
+```
+
+and the makefile
+
+```make
+obj-m = hello.o
+all:
+	make -C /lib/modules/$(shell uname -r)/build/ M=$(PWD) modules
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+```
+
+There may be a subtle difference between the offsets, but we can adjust these minimal differences via inspection with a debugger.
