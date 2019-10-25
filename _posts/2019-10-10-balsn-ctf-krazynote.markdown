@@ -668,9 +668,7 @@ I thought that `pthread` was the culprit, and replaced `pthread` with `clone`. I
 
 Then I applied some gcc optimiziation flags (strip symbols, size optimization) but it still was over 400.
 
-I spent about 5~6 hours moaning about this obstacle. Then, I remembered a pwnable challenge that I read a [write-up](https://thekidofarcrania.gitlab.io/2019/06/13/0ctf19-finals/) on. So I thought I should compile my binary with uclibc. 
-
-```
+```python
 #!/usr/bin/env python2
 from pwn import *
 
@@ -719,6 +717,8 @@ if __name__ == "__main__":
 	exploit()
 
 ```
+
+I spent about 5~6 hours moaning about this obstacle. Then, I remembered a pwnable challenge that I read a [write-up](https://thekidofarcrania.gitlab.io/2019/06/13/0ctf19-finals/) on. So I thought I should compile my binary with [uclibc](https://www.uclibc.org/). 
 
 Compiling with uclibc is a bit complicated, but I just downloaded the uclibc build system, `chroot`ed into it, and compiled it. It worked brilliantly. The exploit shrinked to about 35 chunks, without stripping or any sort of optimization. 
 
