@@ -10,6 +10,8 @@ It was my first time doing a non-userspace pwn challenge in a CTF, so I did a lo
 
 My goal is to try to describe the solving process as detailed as possible, so that people who don't have experience in kernel exploitation can understand it as well. I will also add links to resources I've used to solve it.
 
+And most importantly, [this](https://github.com/pr0cf5/CTF-writeups/blob/master/2019/BalsnCTF/knote/exploit.c) is my exploit code for reference.
+
 ## Some Background Information
 
 ### 1. task_struct and cred_struct
