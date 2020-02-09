@@ -16,7 +16,7 @@
 title: pr0cf5's bl0g
 email: wireless@kaist.ac.kr
 description: >- # this means to ignore newlines until "baseurl:"
-  CTF player in KAIST GoN, loves pwn
+  double free or corruption (!prev)
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: pr0cf51
