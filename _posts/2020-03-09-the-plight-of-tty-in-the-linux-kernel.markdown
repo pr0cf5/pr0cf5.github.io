@@ -7,11 +7,11 @@ categories: ctf
 # Introduction
 I solved a bunch of pwnable tasks from zer0pts CTF 2020. Despite the fact that one person wrote most of the challenges in diverse categories (I think that's really admirable) the quality of tasks was impressive. I hope the organizers get a chance to do it next year too.
 
-One of the tasks was a linux kernel pwnable challenge called 'meow'. I liked this challenge because it helped me discover some good and useful techniques for exploiting linux kernel vulnerabilities under SMEP+SMAP+KPTI. As the title suggests, I made heavy use of the `tty_struct`.
+One of the tasks was a linux kernel pwnable challenge called 'meow'. I liked this challenge because it helped me discover some good and useful techniques for exploiting linux kernel vulnerabilities under SMEP+SMAP+KPTI. As the title suggests, I made heavy use of the `tty_struct`. By overwriting a `tty_struct`, I could **turn a function pointer overwrite into a stable arbitrary read write primitive.** I am going to discuss how I did it.
 
 But before we get to any exploitation details, I'd like to discuss some tips for solving linux kernel CTF tasks. Unlike when doing kernel research, CTF tasks have some complications, and I'd like to share how I dealt with those issues.
 
-If you want to skip all of this and go to the exploit details, you can use this [teleporter](#exploitation-strategy). If you want to see my exploit code, [take a look]().
+If you want to skip all of this and go to the exploit details, you can use this [teleporter](#exploitation-strategy). If you want to see my exploit code, [take a look](https://github.com/pr0cf5/CTF-writeups/blob/master/2020/zer0pts-ctf/meow/exploit.c).
 
 # CTF Tips for Linux Kernel Tasks
 If you download dist files for a linux kernel task, you will usually find 3 things: bzImage, rootfs.cpio, start.sh. The bzImage is a compressed kernel image. rootfs.cpio is the filesystem that the vm will be using. It is similar to virtual HDDs except for the fact that they are not persistent, meaning that changes will not be refelcted to them. The start.sh script usually runs QEMU with the correct arguments.
