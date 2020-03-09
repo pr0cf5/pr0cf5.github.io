@@ -88,10 +88,13 @@ By using a technique called physmap spray, we can make the physical address of a
 
 If you want to know more about this, try to understand [this](https://github.com/De1ta-team/De1CTF2019/tree/master/writeup/pwn/Race) writeup. There are many similarities. Also [this](https://resources.infosecinstitute.com/exploiting-linux-kernel-heap-corruptions-slub-allocator/#gref) might help too.
 
-# Exploitation Primitive
+# Exploitation Strategy
 If we didn't have SMAP and KPTI, we can get ring0 code execution very easily. Without SMEP we can jump directly to userspace, and with SMEP we can do kernel ROP. SMAP and KPTI makes things very difficult. To bypass them, we need a good read/write primitive.
 
-I thought for a long time to think how to get a read/write primitive by controlling the `tty_struct`, and came to a rather simple solution. The solution is based on the fact that `ioctl` handlers have 3 arguments, and the last 2 arguments are completely user controllable. (The second one is 32bit though) 
+I thought for a long time to think how to get a read/write primitive by controlling the `tty_struct`, and came to a rather simple solution. The solution is based on the fact that `ioctl` handlers have 3 arguments, and the last 2 arguments are completely user controllable. (The second one is 32bit though) To be exact, the prototype of `ioctl` is below.
+```c
+unsigned int ioctl(struct tty_struct *tty, unsigned int cmd, unsigned long arg)
+```
 
 So if we overwrite the `ioctl` handler with a gadget like the following, we can get a 4byte arbitrary write primitive.
 
