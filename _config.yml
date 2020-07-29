@@ -24,7 +24,7 @@ github_username:  pr0cf5
 
 # Build settings
 markdown: kramdown
-theme: minima
+theme: jekyll-theme-cayman
 plugins:
   - jekyll-feed
 
