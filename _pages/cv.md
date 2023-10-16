@@ -22,7 +22,7 @@ Work experience
 
 * Fall 2023 - Fall 2024 : Undergraduate Research Assistant
   * [KAIST Hacking Lab](https://kaist-hacking.github.io/)
-  * Duties included: Browser Research, Decompiler Research
+  * Duties included: Browser Fuzzing Research, Decompiler Research
   * Supervisor: [Professor Insu Yun](https://insuyun.github.io/)
   
 Publications
@@ -31,12 +31,18 @@ Publications
     {% include archive-single-cv.html %}
   {% endfor %}</ul>
 
-Projects
+Notable Github Repos
 ======
 * **A Beginner-Friendly Tutorial on Kernel Exploitation**
   * [link](https://github.com/pr0cf5/kernel-exploit-practice) (343 stars / 45 forks)
   * Wargame style tutorial for teaching kernel exploit techniques.
   * Discusses popular techniques to bypass Linux Kernel exploit defenses such as SMEP/SMAP/kPTI.
+* **CTF Write-Ups**
+  * [link](https://github.com/pr0cf5/CTF-writeups)
+  * Includes detailed CTF write-ups from 2018 to 2021, mostly pwn (binary exploitatino)
+
+Projects
+======
 * **dTLB Timer: Measuring L1 dTLB Latency Under the Absence of Fine Grained Timing Primitives**
   * [link](https://github.com/pr0cf5/dtlb-timer)
   * Term project for KAIST 2022 Spring EE595: Hardware Security
@@ -59,10 +65,11 @@ Awards and Honors
   * HXP CTF 2021, 2nd place (with team Super Guesser)
   * DEFCON CTF 27 Finals, 12th place (with team KaisHackGoN)
   * Codegate CTF 2019 University Division, 3rd place (with team GoN)
+  * Including many more...
 * **Academic Awards**
   * KAIST [Dean's List](https://engineering.kaist.ac.kr/student/dean): 2018 Spring, 2022 Spring, 2022 Fall
 * **Scholarships**
-  * National Science \& Technology Scholarship (2019 Fall - Present)
+  * National Science & Technology Scholarship (2019 Fall - Present)
 
 Service and leadership
 ======
